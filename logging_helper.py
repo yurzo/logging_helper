@@ -12,7 +12,6 @@ import logging
 import logging.handlers
 import os
 import sys
-from contextlib import contextmanager
 
 FORMATTERS = {
     'default': logging.Formatter(
@@ -48,9 +47,23 @@ DEFAULT_HANDLER = HandlerClass(**HANDLER_CONFIG)
 DEFAULT_HANDLER.setFormatter(FORMATTERS['default'])
 DEFAULT_HANDLER.setLevel(logging.DEBUG)
 
+class DefaultFilter:
+    @staticmethod
+    def filter(record):
+        return not hasattr(record, 'stdio')
+
+DEFAULT_HANDLER.addFilter(DefaultFilter())
+
 PRINTS_HANDLER = HandlerClass(**HANDLER_CONFIG)
 PRINTS_HANDLER.setFormatter(FORMATTERS['print'])
 PRINTS_HANDLER.setLevel(logging.DEBUG)
+
+class StdioFilter:
+    @staticmethod
+    def filter(record):
+        return hasattr(record, 'stdio')
+
+PRINTS_HANDLER.addFilter(StdioFilter())
 
 HANDLERS = {
     'default': DEFAULT_HANDLER,
@@ -60,6 +73,8 @@ HANDLERS = {
 LOGGER = logging.getLogger(__name__)
 LOGGER.root.setLevel(logging.DEBUG)
 LOGGER.root.addHandler(HANDLERS['default'])
+LOGGER.root.addHandler(HANDLERS['prints'])
+
 
 class StreamToLogger:
     '''
@@ -73,31 +88,34 @@ class StreamToLogger:
         self.linebuf = ''
         self.file = file
 
-    @contextmanager
-    def switch_format(self):
-        '''syntactic sugar to do the formatting handler replacement'''
-        self.logger.root.removeHandler(HANDLERS['default'])
-        self.logger.root.addHandler(HANDLERS['prints'])
-        try:
-            yield None
-        finally:
-            self.logger.root.removeHandler(HANDLERS['prints'])
-            self.logger.root.addHandler(HANDLERS['default'])
+    # @contextmanager
+    # def switch_format(self):
+    #     '''syntactic sugar to do the formatting handler replacement'''
+    #     self.logger.root.removeHandler(HANDLERS['default'])
+    #     self.logger.root.addHandler(HANDLERS['prints'])
+    #     try:
+    #         yield None
+    #     finally:
+    #         self.logger.root.removeHandler(HANDLERS['prints'])
+    #         self.logger.root.addHandler(HANDLERS['default'])
 
-    def _write(self, buf):
+    def write(self, buf):
 
         for line in buf.rstrip().splitlines():
             line = line.strip()
             if not line:
                 continue
-            self.logger.log(self.log_level, line)
+            self.logger.log(self.log_level, line, extra={'stdio': True})
             if self.file:
                 print(line, file=self.file)
 
-    def write(self, buf):
-        '''write'''
-        with self.switch_format():
-            self._write(buf)
+    # def write(self, buf):
+    #     '''write'''
+    #     with self.switch_format():
+    #         self._write(buf)
+    #
+    #     self._write(buf)
+
 
     def flush(self):
         '''required for compliance'''
@@ -105,8 +123,8 @@ class StreamToLogger:
 
 
 STDOUT_LVL = logging.DEBUG + 1
-
 STDOUT_LOGGER = logging.getLogger('STDOUT')
+
 logging.addLevelName(STDOUT_LVL, 'STDOUT')
 STREAM_LOGGER = StreamToLogger(STDOUT_LOGGER, sys.__stdout__, STDOUT_LVL)
 sys.stdout = STREAM_LOGGER
